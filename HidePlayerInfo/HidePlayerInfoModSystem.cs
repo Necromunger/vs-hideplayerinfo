@@ -23,7 +23,7 @@ public class HidePlayerInfoModSystem : ModSystem
 [HarmonyPatch(typeof(WorldMapManager), nameof(WorldMapManager.SendMapDataToClient))]
 class Patch_SendMapDataToClient
 {
-    static bool Prefix(WorldMapManager map, MapLayer forMapLayer, IServerPlayer forPlayer, byte[] data)
+    static bool Prefix(WorldMapManager __instance, MapLayer forMapLayer, IServerPlayer forPlayer, byte[] data)
     {
         if (forMapLayer is PlayerMapLayer)
             return false;
