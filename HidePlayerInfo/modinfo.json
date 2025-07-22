@@ -1,0 +1,13 @@
+{
+    "type": "code",
+    "modid": "hideplayerinfo",
+    "name": "HidePlayerInfo",
+    "authors": [
+        "Necromunger"
+    ],
+    "description": "Hide player pins on map and player nametags unless looked at.",
+    "version": "1.0.0",
+    "dependencies": {
+        "game": ""
+    }
+}
