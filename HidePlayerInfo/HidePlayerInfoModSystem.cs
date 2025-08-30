@@ -8,13 +8,9 @@ namespace HidePlayerInfo;
 
 public class HidePlayerInfoModSystem : ModSystem
 {
-    public override void StartClientSide(ICoreClientAPI api)
+    public override void Start(ICoreAPI api)
     {
         api.World.Config.SetBool("mapHideOtherPlayers", true);
-    }
-
-    public override void StartServerSide(ICoreServerAPI api)
-    {
         var harmony = new Harmony("necromunger.hideplayerinfo");
         harmony.PatchAll();
     }
@@ -29,5 +25,29 @@ class Patch_SendMapDataToClient
             return false;
 
         return true;
+    }
+}
+
+[HarmonyPatch(typeof(EntityBehaviorNameTag), nameof(EntityBehaviorNameTag.OnRenderFrame))]
+class Patch_EntityBehaviorNameTag_OnRenderFrame
+{
+    static readonly System.Reflection.MethodInfo IsSelf = AccessTools.PropertyGetter(typeof(EntityBehaviorNameTag), "IsSelf");
+    static bool Prefix(EntityBehaviorNameTag __instance, float deltaTime, EnumRenderStage stage)
+    {
+        bool isSelf = (bool)IsSelf.Invoke(__instance, null);
+        if (isSelf)
+            return false;
+
+        return true;
+    }
+}
+
+[HarmonyPatch(typeof(EntityBehaviorNameTag), nameof(EntityBehaviorNameTag.ShowOnlyWhenTargeted), MethodType.Getter)]
+class Patch_ShowOnlyWhenTargeted_Get
+{
+    static bool Prefix(ref bool __result)
+    {
+        __result = true;
+        return false;
     }
 }
