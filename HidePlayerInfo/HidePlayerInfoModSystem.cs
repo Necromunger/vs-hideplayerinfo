@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
+using Vintagestory.API.Common.Entities;
 using Vintagestory.API.Server;
 using Vintagestory.GameContent;
 
@@ -14,6 +15,8 @@ public class HidePlayerInfoModSystem : ModSystem
     public static string ConfigName = "HidePlayerInfoConfig.json";
 
     internal HidePlayerInfoConfig config;
+
+    internal HashSet<string> partyMemberUids = new();
 
     private Harmony harmony;
     private IServerNetworkChannel serverChannel;
@@ -36,7 +39,7 @@ public class HidePlayerInfoModSystem : ModSystem
         serverChannel = sapi.Network.RegisterChannel("hideplayerinfo")
             .RegisterMessageType<PartyMapData>();
 
-        if (config.AllowGroupMemberMapVisibility)
+        if (config.AllowGroupMemberMapVisibility || config.AllowGroupMemberNametagVisibility)
         {
             sapi.Event.RegisterGameTickListener(dt => SendPartyPositions(sapi), 2000);
         }
@@ -64,6 +67,16 @@ public class HidePlayerInfoModSystem : ModSystem
     private void OnPartyDataReceived(PartyMapData data)
     {
         partyMapLayer?.UpdatePositions(data.Positions);
+
+        var uids = new HashSet<string>();
+        if (data.Positions != null)
+        {
+            foreach (var p in data.Positions)
+            {
+                if (p.PlayerUid != null) uids.Add(p.PlayerUid);
+            }
+        }
+        partyMemberUids = uids;
     }
 
     private void SendPartyPositions(ICoreServerAPI sapi)
@@ -104,6 +117,7 @@ public class HidePlayerInfoModSystem : ModSystem
                 members.Add(new PartyMemberPosition
                 {
                     PlayerName = other.PlayerName,
+                    PlayerUid = other.PlayerUID,
                     X = pos.X,
                     Y = pos.Y,
                     Z = pos.Z
@@ -150,8 +164,17 @@ class Patch_EntityBehaviorNameTag_OnRenderFrame
 [HarmonyPatch(typeof(EntityBehaviorNameTag), nameof(EntityBehaviorNameTag.ShowOnlyWhenTargeted), MethodType.Getter)]
 class Patch_ShowOnlyWhenTargeted_Get
 {
-    static bool Prefix(ref bool __result)
+    static bool Prefix(EntityBehaviorNameTag __instance, ref bool __result)
     {
+        // Party members get visible nametags (don't force ShowOnlyWhenTargeted)
+        if (HidePlayerInfoModSystem.Instance?.config?.AllowGroupMemberNametagVisibility == true
+            && __instance.entity is EntityPlayer ep
+            && HidePlayerInfoModSystem.Instance.partyMemberUids.Contains(ep.PlayerUID))
+        {
+            __result = false;
+            return false;
+        }
+
         __result = true;
         return false;
     }

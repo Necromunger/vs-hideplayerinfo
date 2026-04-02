@@ -5,6 +5,7 @@ namespace HidePlayerInfo;
 public class HidePlayerInfoConfig
 {
     public bool AllowGroupMemberMapVisibility = false;
+    public bool AllowGroupMemberNametagVisibility = false;
 
     public static HidePlayerInfoConfig GetDefault(ICoreAPI api)
     {

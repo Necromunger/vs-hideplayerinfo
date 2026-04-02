@@ -16,11 +16,14 @@ public class PartyMemberPosition
     public string PlayerName;
 
     [ProtoMember(2)]
-    public double X;
+    public string PlayerUid;
 
     [ProtoMember(3)]
-    public double Y;
+    public double X;
 
     [ProtoMember(4)]
+    public double Y;
+
+    [ProtoMember(5)]
     public double Z;
 }
