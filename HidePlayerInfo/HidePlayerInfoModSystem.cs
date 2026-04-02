@@ -1,6 +1,5 @@
 using HarmonyLib;
 using System.Collections.Generic;
-using System.Linq;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
@@ -15,7 +14,6 @@ public class HidePlayerInfoModSystem : ModSystem
     public static string ConfigName = "HidePlayerInfoConfig.json";
 
     internal HidePlayerInfoConfig config;
-
     internal HashSet<string> partyMemberUids = new();
 
     private Harmony harmony;
@@ -83,48 +81,42 @@ public class HidePlayerInfoModSystem : ModSystem
     {
         var allPlayers = sapi.World.AllOnlinePlayers;
         if (allPlayers.Length < 2) return;
+        var groupsById = sapi.Groups.PlayerGroupsById;
 
         foreach (var player in allPlayers)
         {
             var serverPlayer = player as IServerPlayer;
-            if (serverPlayer == null) continue;
+            if (serverPlayer?.Groups == null || serverPlayer.Groups.Length == 0) continue;
 
-            var myGroupIds = serverPlayer.Groups?
-                .Select(g => g.GroupUid)
-                .ToHashSet() ?? new HashSet<int>();
-
-            if (myGroupIds.Count == 0)
-            {
-                serverChannel.SendPacket(new PartyMapData { Positions = System.Array.Empty<PartyMemberPosition>() }, serverPlayer);
-                continue;
-            }
-
+            var seen = new HashSet<string>();
             var members = new List<PartyMemberPosition>();
 
-            foreach (var other in allPlayers)
+            foreach (var membership in serverPlayer.Groups)
             {
-                if (other.PlayerUID == player.PlayerUID) continue;
+                if (!groupsById.TryGetValue(membership.GroupUid, out var group)) continue;
+                if (group.OnlinePlayers == null) continue;
 
-                var otherServer = other as IServerPlayer;
-                if (otherServer?.Groups == null) continue;
-
-                bool shared = otherServer.Groups.Any(g => myGroupIds.Contains(g.GroupUid));
-                if (!shared) continue;
-
-                var pos = other.Entity?.Pos;
-                if (pos == null) continue;
-
-                members.Add(new PartyMemberPosition
+                foreach (var member in group.OnlinePlayers)
                 {
-                    PlayerName = other.PlayerName,
-                    PlayerUid = other.PlayerUID,
-                    X = pos.X,
-                    Y = pos.Y,
-                    Z = pos.Z
-                });
+                    if (member.PlayerUID == player.PlayerUID) continue;
+                    if (!seen.Add(member.PlayerUID)) continue;
+
+                    var pos = member.Entity?.Pos;
+                    if (pos == null) continue;
+
+                    members.Add(new PartyMemberPosition
+                    {
+                        PlayerName = member.PlayerName,
+                        PlayerUid = member.PlayerUID,
+                        X = pos.X,
+                        Y = pos.Y,
+                        Z = pos.Z
+                    });
+                }
             }
 
-            serverChannel.SendPacket(new PartyMapData { Positions = members.ToArray() }, serverPlayer);
+            if (members.Count > 0)
+                serverChannel.SendPacket(new PartyMapData { Positions = [.. members] }, serverPlayer);
         }
     }
 
