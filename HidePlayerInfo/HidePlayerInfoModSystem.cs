@@ -74,11 +74,12 @@ public class HidePlayerInfoModSystem : ModSystem
         foreach (var player in allPlayers)
         {
             var serverPlayer = player as IServerPlayer;
-            if (serverPlayer?.Groups == null || serverPlayer.Groups.Length == 0) continue;
+            if (serverPlayer == null) continue;
 
             var seen = new HashSet<string>();
             var members = new List<PartyMemberPosition>();
 
+            if (serverPlayer.Groups != null)
             foreach (var membership in serverPlayer.Groups)
             {
                 if (!groupsById.TryGetValue(membership.GroupUid, out var group)) continue;
@@ -103,8 +104,7 @@ public class HidePlayerInfoModSystem : ModSystem
                 }
             }
 
-            if (members.Count > 0)
-                serverChannel.SendPacket(new PartyMapData { Positions = [.. members] }, serverPlayer);
+            serverChannel.SendPacket(new PartyMapData { Positions = [.. members] }, serverPlayer);
         }
     }
 
