@@ -9,11 +9,10 @@ namespace HidePlayerInfo;
 public class PartyMapLayer : MapLayer
 {
     private readonly ICoreClientAPI capi;
-    private PartyMemberPosition[] positions = Array.Empty<PartyMemberPosition>();
     private LoadedTexture pinTex;
 
     public override string Title => "Group";
-    public override string LayerGroupCode => "hideplayerinfo-groupmates";
+    public override string LayerGroupCode => "group";
     public override EnumMapAppSide DataSide => EnumMapAppSide.Client;
     public override bool RequireChunkLoaded => false;
 
@@ -23,14 +22,10 @@ public class PartyMapLayer : MapLayer
         pinTex = new LoadedTexture(capi);
     }
 
-    public void UpdatePositions(PartyMemberPosition[] newPositions)
-    {
-        positions = newPositions ?? Array.Empty<PartyMemberPosition>();
-    }
-
     public override void Render(GuiElementMap mapElem, float dt)
     {
-        if (!Active || positions.Length == 0) return;
+        var positions = HidePlayerInfoModSystem.Instance?.partyPositions;
+        if (!Active || positions == null || positions.Length == 0) return;
 
         int w = Math.Max(1, (int)mapElem.Bounds.InnerWidth);
         int h = Math.Max(1, (int)mapElem.Bounds.InnerHeight);

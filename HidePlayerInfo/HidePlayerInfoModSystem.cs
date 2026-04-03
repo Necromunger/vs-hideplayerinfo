@@ -2,7 +2,6 @@ using HarmonyLib;
 using System.Collections.Generic;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
-using Vintagestory.API.Common.Entities;
 using Vintagestory.API.Server;
 using Vintagestory.GameContent;
 
@@ -11,14 +10,15 @@ namespace HidePlayerInfo;
 public class HidePlayerInfoModSystem : ModSystem
 {
     public static HidePlayerInfoModSystem Instance;
-    public static string ConfigName = "HidePlayerInfoConfig.json";
+    public static string ConfigName = "HidePlayerInfo.json";
 
     internal HidePlayerInfoConfig config;
     internal HashSet<string> partyMemberUids = new();
 
+    internal PartyMemberPosition[] partyPositions = System.Array.Empty<PartyMemberPosition>();
+
     private Harmony harmony;
     private IServerNetworkChannel serverChannel;
-    private PartyMapLayer partyMapLayer;
 
     public override void Start(ICoreAPI api)
     {
@@ -50,29 +50,17 @@ public class HidePlayerInfoModSystem : ModSystem
             .SetMessageHandler<PartyMapData>(OnPartyDataReceived);
 
         var mapManager = capi.ModLoader.GetModSystem<WorldMapManager>();
-        mapManager.RegisterMapLayer<PartyMapLayer>("Party", 1.0);
-
-        foreach (var layer in mapManager.MapLayers)
-        {
-            if (layer is PartyMapLayer pml)
-            {
-                partyMapLayer = pml;
-                break;
-            }
-        }
+        mapManager.RegisterMapLayer<PartyMapLayer>("Group", 1.0);
     }
 
     private void OnPartyDataReceived(PartyMapData data)
     {
-        partyMapLayer?.UpdatePositions(data.Positions);
+        partyPositions = data.Positions ?? System.Array.Empty<PartyMemberPosition>();
 
         var uids = new HashSet<string>();
-        if (data.Positions != null)
+        foreach (var p in partyPositions)
         {
-            foreach (var p in data.Positions)
-            {
-                if (p.PlayerUid != null) uids.Add(p.PlayerUid);
-            }
+            if (p.PlayerUid != null) uids.Add(p.PlayerUid);
         }
         partyMemberUids = uids;
     }
