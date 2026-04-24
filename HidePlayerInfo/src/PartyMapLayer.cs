@@ -95,7 +95,8 @@ public class PartyMapLayer : MapLayer
             (float)mapElem.Bounds.InnerWidth,
             (float)mapElem.Bounds.InnerHeight,
             50f,
-            new Vec4f(1, 1, 1, 1));
+            new Vec4f(1, 1, 1, 1)
+        );
     }
 
     public override void OnMapClosedClient()

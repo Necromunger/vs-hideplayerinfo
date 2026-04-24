@@ -8,14 +8,14 @@
     {
         "file": "game:entities/humanoid/player",
         "op": "add",
-        "path": "/client/behaviors/1/renderRange",
-        "value": "20"
+        "path": "/server/behaviors/1/showtagonlywhentargeted",
+        "value": "true"
     },
     {
         "file": "game:entities/humanoid/player",
         "op": "add",
-        "path": "/server/behaviors/1/showtagonlywhentargeted",
-        "value": "true"
+        "path": "/client/behaviors/1/renderRange",
+        "value": "20"
     },
     {
         "file": "game:entities/humanoid/player",

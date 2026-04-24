@@ -1,5 +1,5 @@
-using HarmonyLib;
 using System.Collections.Generic;
+using HarmonyLib;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.Server;
@@ -15,7 +15,8 @@ public class HidePlayerInfoModSystem : ModSystem
     internal HidePlayerInfoConfig config;
     internal HashSet<string> partyMemberUids = new();
 
-    internal PartyMemberPosition[] partyPositions = System.Array.Empty<PartyMemberPosition>();
+    internal PartyMemberPosition[] partyPositions = [];
+    private readonly HashSet<string> playersWithSentPartyData = new();
 
     private Harmony harmony;
     private IServerNetworkChannel serverChannel;
@@ -38,9 +39,7 @@ public class HidePlayerInfoModSystem : ModSystem
             .RegisterMessageType<PartyMapData>();
 
         if (config.AllowGroupMemberMapVisibility || config.AllowGroupMemberNametagVisibility)
-        {
             sapi.Event.RegisterGameTickListener(dt => SendPartyPositions(sapi), 2000);
-        }
     }
 
     public override void StartClientSide(ICoreClientAPI capi)
@@ -55,39 +54,46 @@ public class HidePlayerInfoModSystem : ModSystem
 
     private void OnPartyDataReceived(PartyMapData data)
     {
-        partyPositions = data.Positions ?? System.Array.Empty<PartyMemberPosition>();
-
-        var uids = new HashSet<string>();
+        partyPositions = data.Positions ?? [];
+        partyMemberUids = [];
         foreach (var p in partyPositions)
-        {
-            if (p.PlayerUid != null) uids.Add(p.PlayerUid);
-        }
-        partyMemberUids = uids;
+            partyMemberUids.Add(p.PlayerUid);
     }
 
     private void SendPartyPositions(ICoreServerAPI sapi)
     {
         var allPlayers = sapi.World.AllOnlinePlayers;
-        if (allPlayers.Length < 2) return;
-        var groupsById = sapi.Groups.PlayerGroupsById;
+        var groups = sapi.Groups.PlayerGroupsById;
+        var onlinePlayerUids = new HashSet<string>();
 
         foreach (var player in allPlayers)
         {
             var serverPlayer = player as IServerPlayer;
             if (serverPlayer == null) continue;
 
+            onlinePlayerUids.Add(serverPlayer.PlayerUID);
+
+            // skip players not in any group
+            if (serverPlayer.Groups == null || serverPlayer.Groups.Length == 0)
+            {
+                SendEmptyPartyDataIfNeeded(serverPlayer);
+                continue;
+            }
+
             var seen = new HashSet<string>();
             var members = new List<PartyMemberPosition>();
 
-            if (serverPlayer.Groups != null)
-            foreach (var membership in serverPlayer.Groups)
+            // search all player groups for players
+            foreach (var playerGroups in serverPlayer.Groups)
             {
-                if (!groupsById.TryGetValue(membership.GroupUid, out var group)) continue;
+                if (!groups.TryGetValue(playerGroups.GroupUid, out var group)) continue;
                 if (group.OnlinePlayers == null) continue;
 
                 foreach (var member in group.OnlinePlayers)
                 {
                     if (member.PlayerUID == player.PlayerUID) continue;
+                    if (member.GetGroup(group.Uid) == null) continue;
+
                     if (!seen.Add(member.PlayerUID)) continue;
 
                     var pos = member.Entity?.Pos;
@@ -104,8 +110,25 @@ public class HidePlayerInfoModSystem : ModSystem
                 }
             }
 
+            if (members.Count == 0)
+            {
+                SendEmptyPartyDataIfNeeded(serverPlayer);
+                continue;
+            }
+
             serverChannel.SendPacket(new PartyMapData { Positions = [.. members] }, serverPlayer);
+            playersWithSentPartyData.Add(serverPlayer.PlayerUID);
         }
+
+        playersWithSentPartyData.RemoveWhere(playerUid => !onlinePlayerUids.Contains(playerUid));
+    }
+
+    private void SendEmptyPartyDataIfNeeded(IServerPlayer serverPlayer)
+    {
+        if (!playersWithSentPartyData.Remove(serverPlayer.PlayerUID))
+            return;
+
+        serverChannel.SendPacket(new PartyMapData { Positions = [] }, serverPlayer);
     }
 
     public override void Dispose()
@@ -127,12 +150,43 @@ class Patch_SendMapDataToClient
     }
 }
 
+#region Harmony patches
+
+static class NameTagPatchUtils
+{
+    static readonly System.Reflection.FieldInfo RenderRangeField =
+        AccessTools.Field(typeof(EntityBehaviorNameTag), "renderRange");
+
+    internal static bool HasVisiblePartyNametag(EntityBehaviorNameTag nameTag)
+    {
+        return HidePlayerInfoModSystem.Instance?.config?.AllowGroupMemberNametagVisibility == true
+            && nameTag.entity is EntityPlayer ep
+            && HidePlayerInfoModSystem.Instance.partyMemberUids.Contains(ep.PlayerUID);
+    }
+
+    internal static int GetDesiredRenderRange(EntityBehaviorNameTag nameTag)
+    {
+        if (HasVisiblePartyNametag(nameTag))
+            return 999;
+
+        return HidePlayerInfoModSystem.Instance?.config?.NametagVisibilityDistance ?? 999;
+    }
+
+    internal static void SyncRenderRangeField(EntityBehaviorNameTag nameTag)
+    {
+        // Some builds read the backing field directly during render instead of the property getter.
+        RenderRangeField?.SetValue(nameTag, GetDesiredRenderRange(nameTag));
+    }
+}
+
 [HarmonyPatch(typeof(EntityBehaviorNameTag), nameof(EntityBehaviorNameTag.OnRenderFrame))]
 class Patch_EntityBehaviorNameTag_OnRenderFrame
 {
     static readonly System.Reflection.MethodInfo IsSelf = AccessTools.PropertyGetter(typeof(EntityBehaviorNameTag), "IsSelf");
     static bool Prefix(EntityBehaviorNameTag __instance, float deltaTime, EnumRenderStage stage)
     {
+        NameTagPatchUtils.SyncRenderRangeField(__instance);
+
         bool isSelf = (bool)IsSelf.Invoke(__instance, null);
         if (isSelf)
             return false;
@@ -147,9 +201,7 @@ class Patch_ShowOnlyWhenTargeted_Get
     static bool Prefix(EntityBehaviorNameTag __instance, ref bool __result)
     {
         // Party members get visible nametags (don't force ShowOnlyWhenTargeted)
-        if (HidePlayerInfoModSystem.Instance?.config?.AllowGroupMemberNametagVisibility == true
-            && __instance.entity is EntityPlayer ep
-            && HidePlayerInfoModSystem.Instance.partyMemberUids.Contains(ep.PlayerUID))
+        if (NameTagPatchUtils.HasVisiblePartyNametag(__instance))
         {
             __result = false;
             return false;
@@ -159,3 +211,15 @@ class Patch_ShowOnlyWhenTargeted_Get
         return false;
     }
 }
+
+[HarmonyPatch(typeof(EntityBehaviorNameTag), nameof(EntityBehaviorNameTag.RenderRange), MethodType.Getter)]
+class Patch_RenderRange_Get
+{
+    static bool Prefix(EntityBehaviorNameTag __instance, ref int __result)
+    {
+        __result = NameTagPatchUtils.GetDesiredRenderRange(__instance);
+        return false;
+    }
+}
+
+#endregion
